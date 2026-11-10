@@ -1,0 +1,31 @@
+// Little OBJ loader
+// Ingemar's little OBJ loader
+// Formerly named LoadOBJ or loadobj
+// by Ingemar Ragnemalm 2005, 2008, 2019, 2021
+
+// Original version 2005 was extremely simple and intended for use with old OpenGL immediate mode.
+// Additions and reorganization by Mikael Kalms 2008
+// 120913: Revised LoadModelPlus/DrawModel by Jens.
+// Partially corrected formatting. (It is a mess!)
+// 130227: Error reporting in DrawModel
+// 130422: Added ScaleModel
+// 150909: Frees up temporary "Mesh" memory i LoadModel. Thanks to Simon Keisala for finding this!
+// Added DisposeModel. Limited the number of error printouts, thanks to Rasmus Hytter for this suggestion!
+// 160302: Uses fopen_s on Windows, as suggested by Jesper Post. Should reduce warnings a bit.
+// 160510: Uses calloc instead of malloc (for safety) in many places where it could possibly cause problems.
+// 170406: Added "const" to string arguments to make C++ happier.
+// 190416: free mesh->coordStarts properly.
+// 191110: Finally! Multi-part OBJ files work! Renamed LoadModelPlus to LoadModel.
+// and added LoadModelSet! The old LoadModel was removed. Converted to use vec2/vec3
+// instead of arrays of float. It is now dependent on VectorUtils3. If you want to
+// make it independent of VectorUtils3, only a few structs and functions have to be replaced.
+// MTL support working! Parser totally rewritten. Officially renamed to Ingemars Little OBJ Loader,
+// LOL for short! And boy did I find a nice acronym!
+// 210125: Corrected types in LoadDataToModel. Corrected material disposal in the still badly tested DisposeModel.
+// 210218: Allows TAB between parts of string.
+// 210304: Corrected bad allocation size on row 538, found by Jens Lindgren, who also found glDeleteVertexArrays in DisposeModel.
+// 210422: Change by Felicia Castenbrandt, around row 415, copy path or source. This change is likely to be needed in some other places.
+// 210502: Dispose the material name list, omission found by Jens Lindgren.
+// 220222: Added a printed error message if ParseOBJ can't open a file. Also makes DrawModel always activare the shader for you.
+// 2022 somewhere: Made experimental header only version, necessary to work with VectorUtils in C++.
+// 2023-02-05: Added LOL_IMPLEMENTATION to avoid double compilation.

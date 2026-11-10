@@ -1,0 +1,28 @@
+// 2012: Made a first draft by extracting context creation from other code.
+// 130131: Fixed bugs in keyboard and update events. Seems to work pretty well! Things are missing, GL3 untested, but otherwise it runs stable with glutgears.
+// 130206: Timers now tested and working. CPU load kept decent when not intentionally high.
+// 130907: Bug fixes, test for non-existing gReshape, glutKeyboardUpFunc corrected.
+// 130916: Fixed the event bug. Cleaned up most comments left from debugging.
+// 130926: Cleaned up warnings, added missing #includes.
+// 140130: A bit more cleanup for avoiding warnings (_BSD_SOURCE below).
+// 140401: glutKeyIsDown and glutWarpPointer added and got an extra round of testing.
+// 150205: glutRepeatingTimer new, better name for glutRepeatingTimerFunc
+// Added a default glViewport call when the window is resized.
+// Made a bug fix in the event processing so that mouse drag events won't stack up.
+// Somewhere here I added a kind of full-screen support (but without removing window borders).
+// 150216: Added proper OpenGL3 initalization. (Based on a patch by Sebastian Parborg.)
+// 150223: Finally, decent handling on the GLUT configuration!
+// 150227: Resize triggers an update!
+// 150302: Window position, multisample, even better config
+// 150618: Added glutMouseIsDown() (not in the old GLUT API but a nice extension!).
+// Added #ifdefs to produce errors if compiled on the wrong platform!
+// 150909: Added glutExit.
+// 150924: Added support for special keys.
+// 160302: Added glutShowCursor and glutHideCursor.
+// 170405: Made some globals static.
+// 170406: Added "const" to string arguments to make C++ happier. glutSpecialFunc and glutSpecialUpFunc are now officially supported - despite being deprecated. (I recommend that you use the same keyboard func for everything.) Added support for multiple mouse buttons (right and left).
+// 170410: Modified glutWarpPointer to make it more robust. Commended out some unused variables to avoid warnings.
+// 180124: Modifications to make it work better on recent MESA, which seems to have introduced some changes. Adds glFlush() in glutSwapBuffers and a timer when starting glutMain to invoke an update after 100 ms.
+// 180208: Added GLUT_WINDOW_WIDTH, GLUT_WINDOW_HEIGHT, GLUT_MOUSE_POSITION_X and GLUT_MOUSE_POSITION_Y to GlutGet. They were already in the Mac version, so let's converge the versions a bit.
+// 260119: Removed glutTimerFunc to simplify. Rewrote glutRepeatingTimer.
+// 260120: Oops. The timer did not work.

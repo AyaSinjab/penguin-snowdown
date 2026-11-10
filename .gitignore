@@ -1,0 +1,18 @@
+# Build output (each computer builds its own)
+game/build/
+*.exe
+*.obj.o
+*.o
+
+# Blender automatic backups
+*.blend1
+*.blend2
+*.blend@
+
+# Windows / editor clutter
+Thumbs.db
+desktop.ini
+.vscode/
+
+# Test screenshots etc.
+*.ppm

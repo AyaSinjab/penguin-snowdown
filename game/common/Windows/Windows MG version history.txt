@@ -1,0 +1,27 @@
+// 120309 First Win32 version. Incomplete, lacks timers and more. Also, most settings are not supported.
+// 130204 Tried to add GL3 and GLEW. No success.
+// Forgotten for too long...
+// 1508013 Running with all current utilities and GLEW, with the psychedelic teapot demo!
+// Timers and rescaling enabled, needs testing.
+// 150817: Timers and rescaling runs fine!
+// Menus and warp pointer are missing, but this looks good enough for "first beta version"!
+// Tested mainly with the Psychedelic Teapot example.
+// 150919 Added the very useful glutKeyIsDown plus support for key up events.
+// 150920: glutInitWindowPosition and glutInitWindowSize are now working
+// 150923: Keyboard events now report ASCII values instead of virtual codes. Also, various special keys like arrow keys should work.
+// Finally, I have taken some steps to make special key callbacks obsolete by smarter mapping of special keys.
+// 151203: Added a stdio window.
+// 160222: Fixed a bug affecting glutKeyIsDown (a very important call which works better now).
+// 1602??: Added glutWarpPointer, glutHideCursor, glutShowCursor.
+// 160309: Added glutFullScreen, glutExitFullScreen, glutToggleFullScreen.
+// 170221: Added glutPositionWindow, glutReshapeWindow. Changed default behavior on resize.
+// 170913: Added glutMouseIsDown, corrected support for glutMotionFunc (dragging).
+// 200405: Added BeginPaint etc as response to WM_PAINT to make Windows stop sending PAINT repeatedly.
+// Also avoided having events blocking timers in the event loop.
+// 210524: Important overhaul! After removing WinMain and moving its functionality to glutInit,
+// MicroGlut now works with MinGW, and outputs printf's properly! I also moved glewInit into MicroGlut
+// to reduce/remove system dependencies from your code. This means MinGW (DevC++ etc) in, Visual Studio OUT!
+// Visual Studio's inability to printf is unbearable and MinGW is a lot better.
+// 210524: Added glutMotionFunc in the header file.
+// 210530: Temporary fix for the window size. It is not how I want it to be but it looks OK and will have to do for now.
+// 220112: Added support for modifier keys
