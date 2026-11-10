@@ -516,15 +516,23 @@ std::vector<StaticPart> arena;
 const float PENGUIN_SCALE = 0.413f;   // from the arena file: ~1.5 m tall penguins
 const float GROUND_Y      = 0.05f;    // top of the ice
 
+// Ice rink boundaries in world coordinates.
+// A safety margin will be applied when calculating valid destinations.
+const float RINK_MIN_X = -10.0f;
+const float RINK_MAX_X =  10.0f;
+const float RINK_MIN_Z =  -7.0f;
+const float RINK_MAX_Z =   7.0f;
+
 GLuint penguinShader;
 PenguinMesh penguinMesh;
 
 // The three AI states (one animation clip each)
-enum State { IDLE, AIM, THROW };
-const char* stateNames[] = { "IDLE", "AIM", "THROW" };
+enum State { IDLE, MOVE, AIM, THROW };
+const char* stateNames[] = { "IDLE", "MOVE", "AIM", "THROW" };
 
 struct Penguin {
     vec3  position;   // where on the ice (y = GROUND_Y)
+    vec3  destination;   // Target position for movement (Seek Behaviour)
     float yaw;        // rotation around the vertical axis, radians
     int   clip;       // which animation is playing (index into penguinMesh.clips)
     float clipTime;   // seconds since the clip started
@@ -577,6 +585,85 @@ const float RELEASE_TIME  = 5.0f / 24.0f;  // Throw frame 6: the snowball leaves
 float randomRange(float a, float b)
 {
     return a + (b - a) * (rand() / (float)RAND_MAX);
+}
+
+// ---------------------------------------------------------------------
+// PART D: Penguin movement and seek behaviour
+// ---------------------------------------------------------------------
+
+// Movement settings
+const float MOVE_SPEED = 1.5f;       // Movement speed in metres per second
+const float ARRIVAL_RADIUS = 0.1f;   // Distance at which the destination is reached
+
+// Keeps a destination inside the ice rink.
+// The margin prevents the penguin's body from crossing the edge.
+vec3 clampDestination(vec3 destination)
+{
+    const float margin = 0.5f;
+
+    destination.x = std::clamp(
+        destination.x,
+        RINK_MIN_X + margin,
+        RINK_MAX_X - margin
+    );
+
+    destination.z = std::clamp(
+        destination.z,
+        RINK_MIN_Z + margin,
+        RINK_MAX_Z - margin
+    );
+
+    destination.y = GROUND_Y;
+
+    return destination;
+}
+
+// Generates a random destination within the ice rink.
+vec3 randomDestination()
+{
+    vec3 destination = vec3(
+        randomRange(RINK_MIN_X, RINK_MAX_X),
+        GROUND_Y,
+        randomRange(RINK_MIN_Z, RINK_MAX_Z)
+    );
+
+    return clampDestination(destination);
+}
+// ---------------------------------------------------------------------
+// PART D2: Seek Behaviour
+// ---------------------------------------------------------------------
+
+// Forward declaration of the existing turning function.
+float turnTowards(Penguin& p, float targetYaw, float dt);
+
+// Moves a penguin towards its destination using Seek Behaviour.
+// Returns true when the destination has been reached.
+bool updateSeek(Penguin& p, float dt)
+{
+    // Calculate the horizontal direction towards the destination.
+    float dx = p.destination.x - p.position.x;
+    float dz = p.destination.z - p.position.z;
+
+    float distance = sqrtf(dx * dx + dz * dz);
+
+    // Stop when the penguin is close enough to its destination.
+    if (distance <= ARRIVAL_RADIUS)
+        return true;
+
+    // Rotate towards the destination using the existing turning function.
+    float targetYaw = atan2f(dx, dz);
+    turnTowards(p, targetYaw, dt);
+
+    // Normalize the direction and move using delta time.
+    float step = fminf(MOVE_SPEED * dt, distance);
+
+    p.position.x += (dx / distance) * step;
+    p.position.z += (dz / distance) * step;
+
+    // Keep the penguin on the ice surface.
+    p.position.y = GROUND_Y;
+
+    return false;
 }
 
 // ---------------------------------------------------------------------
@@ -795,6 +882,13 @@ void enterState(Penguin& p, int index, State s)
         // pick a random opponent (anyone but ourselves)
         do { p.target = rand() % (int)penguins.size(); } while (p.target == index);
         break;
+    case MOVE:
+    // Choose a random destination within the ice rink.
+    p.destination = randomDestination();
+
+    // Use Idle temporarily until the Move animation is available.
+    playClip(p, "Idle", true);
+    break;
     case AIM:
         playClip(p, "Aim", false);
         break;
@@ -818,6 +912,13 @@ void updatePenguin(Penguin& p, int index, float dt)
         // Wait, then go to AIM - but only when the Idle sway passes its neutral
         // pose (t = 0, 1, 2 s), so the switch to the Aim clip doesn't jump.
         if (p.stateTimer > p.waitTime && fmodf(p.clipTime, 1.0f) < dt)
+            enterState(p, index, MOVE);
+        break;
+
+    case MOVE:
+        // Move towards the selected destination.
+        // Once reached, continue to the aiming state.
+        if (updateSeek(p, dt))
             enterState(p, index, AIM);
         break;
 
