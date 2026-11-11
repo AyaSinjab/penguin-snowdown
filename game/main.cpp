@@ -301,9 +301,13 @@ std::vector<AnimClip> loadClips(cgltf_data* data)
 int findClip(const PenguinMesh& mesh, const char* name)
 {
     for (size_t i = 0; i < mesh.clips.size(); i++)
-        if (strcmp(mesh.clips[i].name, name) == 0) return (int)i;
-    printf("Clip %s not found!\n", name);
-    return 0;
+    {
+        if (strcmp(mesh.clips[i].name, name) == 0)
+            return (int)i;
+    }
+
+    printf("ERROR: Animation clip '%s' not found!\n", name);
+    return -1;
 }
 
 // Spherical linear interpolation between two unit quaternions
@@ -530,9 +534,15 @@ PenguinMesh penguinMesh;
 enum State { IDLE, MOVE, AIM, THROW };
 const char* stateNames[] = { "IDLE", "MOVE", "AIM", "THROW" };
 
+// Animation phases used while the penguin is in MOVE.
+enum SlidePhase {
+    SLIDE_START,
+    SLIDE_LOOP,
+    SLIDE_END
+};
+
 struct Penguin {
     vec3  position;   // where on the ice (y = GROUND_Y)
-    vec3  destination;   // Target position for movement (Seek Behaviour)
     float yaw;        // rotation around the vertical axis, radians
     int   clip;       // which animation is playing (index into penguinMesh.clips)
     float clipTime;   // seconds since the clip started
@@ -542,6 +552,7 @@ struct Penguin {
     State state;      // current FSM state
     float stateTimer; // seconds spent in the current state
     float waitTime;   // how long to stay in IDLE before aiming (random)
+    SlidePhase slidePhase; // Current animation phase during MOVE.
     int   target;     // index of the penguin we are aiming at
     
     // --- score (step 6b) ---
@@ -549,13 +560,27 @@ struct Penguin {
     int   hits;       // snowballs that hit someone
     int   timesHit;   // times this penguin was hit
     float hitTimer;   // > 0 while the red hit flash is showing (step 6c)
+
+    // movement and seek behaviour (part D)
+    vec3  destination;   // Target position for movement (Seek Behaviour)
+    int avoidanceSide = 0; // 0 = no avoidance, 1 = left, -1 = right
+    int avoidanceObstacle = -1; // Index of obstacle being avoided
+    vec3 avoidanceWaypoint;       // Temporary target for obstacle avoidance
 };
 float lastTime = 0;   // for dt (seconds)
 
 // Starts a clip from the beginning
 void playClip(Penguin& p, const char* name, bool loop)
 {
-    p.clip = findClip(penguinMesh, name);
+    int clipIndex = findClip(penguinMesh, name);
+
+    if (clipIndex < 0)
+    {
+        printf("ERROR: Cannot play missing animation '%s'\n", name);
+        exit(EXIT_FAILURE);
+    }
+
+    p.clip = clipIndex;
     p.clipTime = 0;
     p.loop = loop;
 }
@@ -595,6 +620,109 @@ float randomRange(float a, float b)
 const float MOVE_SPEED = 1.5f;       // Movement speed in metres per second
 const float ARRIVAL_RADIUS = 0.1f;   // Distance at which the destination is reached
 
+// Represents a static obstacle on the ice rink.
+struct Obstacle
+{
+    vec3 position;  // Centre of the obstacle
+    float radius;   // Collision radius in the XZ-plane
+};
+
+// Static obstacles in the ice rink.
+// Positions are based on the arena model.
+// Collision radii are initial estimates and may need adjustment.
+const std::vector<Obstacle> obstacles = {
+    // Trees
+    { vec3(-6.427f, GROUND_Y, -2.689f), 0.8f },
+    { vec3( 1.802f, GROUND_Y,  3.083f), 0.8f },
+
+    // Snowmen
+    { vec3( 6.440f, GROUND_Y,  0.481f), 0.7f },
+    { vec3(-8.253f, GROUND_Y,  0.764f), 0.7f },
+    { vec3( 0.872f, GROUND_Y, -4.065f), 0.7f }
+};
+
+// Checks whether a position is too close to a static obstacle.
+// Returns true if a collision is detected.
+bool collidesWithObstacle(const vec3& position)
+{
+    const float penguinRadius = 0.4f;
+
+    for (const Obstacle& obstacle : obstacles)
+    {
+        // Calculate horizontal distance to the obstacle.
+        float dx = position.x - obstacle.position.x;
+        float dz = position.z - obstacle.position.z;
+
+        float distance = sqrtf(dx * dx + dz * dz);
+
+        // Collision occurs when the two collision circles overlap.
+        if (distance < penguinRadius + obstacle.radius)
+            return true;
+    }
+
+    return false;
+}
+
+// Checks whether a proposed position is free from static obstacles.
+bool isPositionFree(const vec3& position)
+{
+    return !collidesWithObstacle(position);
+}
+
+
+// Checks whether the straight path between two positions
+// intersects a static obstacle.
+// Returns the closest blocking obstacle along the path.
+bool isPathBlocked(const vec3& start, const vec3& end, int& obstacleIndex)
+{
+    const float penguinRadius = 0.4f;
+
+    float dx = end.x - start.x;
+    float dz = end.z - start.z;
+    float lengthSquared = dx * dx + dz * dz;
+
+    obstacleIndex = -1;
+
+    // Keep track of the closest obstacle along the path.
+    float closestT = 2.0f;
+
+    for (int i = 0; i < (int)obstacles.size(); i++)
+    {
+        const Obstacle& obstacle = obstacles[i];
+
+        float t = 0.0f;
+
+        if (lengthSquared > 0.000001f)
+        {
+            t = ((obstacle.position.x - start.x) * dx +
+                 (obstacle.position.z - start.z) * dz) / lengthSquared;
+
+            t = std::clamp(t, 0.0f, 1.0f);
+        }
+
+        float closestX = start.x + t * dx;
+        float closestZ = start.z + t * dz;
+
+        float diffX = closestX - obstacle.position.x;
+        float diffZ = closestZ - obstacle.position.z;
+
+        float safeRadius = obstacle.radius + penguinRadius;
+
+        // Check whether this obstacle blocks the path.
+        if (diffX * diffX + diffZ * diffZ < safeRadius * safeRadius)
+        {
+            // Keep the obstacle closest along the path.
+            if (t < closestT)
+            {
+                closestT = t;
+                obstacleIndex = i;
+            }
+        }
+    }
+
+    return obstacleIndex != -1;
+}
+
 // Keeps a destination inside the ice rink.
 // The margin prevents the penguin's body from crossing the edge.
 vec3 clampDestination(vec3 destination)
@@ -618,17 +746,33 @@ vec3 clampDestination(vec3 destination)
     return destination;
 }
 
+// Forward declaration for obstacle collision checking.
+bool isPositionFree(const vec3& position);
+
 // Generates a random destination within the ice rink.
 vec3 randomDestination()
 {
-    vec3 destination = vec3(
-        randomRange(RINK_MIN_X, RINK_MAX_X),
-        GROUND_Y,
-        randomRange(RINK_MIN_Z, RINK_MAX_Z)
-    );
+    // Try to find a destination that does not overlap an obstacle.
+    for (int attempt = 0; attempt < 100; attempt++)
+    {
+        vec3 destination = vec3(
+            randomRange(RINK_MIN_X, RINK_MAX_X),
+            GROUND_Y,
+            randomRange(RINK_MIN_Z, RINK_MAX_Z)
+        );
 
-    return clampDestination(destination);
+        destination = clampDestination(destination);
+
+        if (isPositionFree(destination))
+        {
+            return destination;
+        }
+    }
+
+    // Fallback if no valid destination was found.
+    return vec3(0.0f, GROUND_Y, 0.0f);
 }
+
 // ---------------------------------------------------------------------
 // PART D2: Seek Behaviour
 // ---------------------------------------------------------------------
@@ -640,30 +784,175 @@ float turnTowards(Penguin& p, float targetYaw, float dt);
 // Returns true when the destination has been reached.
 bool updateSeek(Penguin& p, float dt)
 {
-    // Calculate the horizontal direction towards the destination.
-    float dx = p.destination.x - p.position.x;
-    float dz = p.destination.z - p.position.z;
+    // Check if the original destination has been reached.
+    float goalDx = p.destination.x - p.position.x;
+    float goalDz = p.destination.z - p.position.z;
+    float goalDistance = sqrtf(goalDx * goalDx + goalDz * goalDz);
 
+    if (goalDistance <= ARRIVAL_RADIUS)
+    {
+        p.avoidanceSide = 0;
+        p.avoidanceObstacle = -1;
+        return true;
+    }
+
+    // Check whether the direct path to the destination is blocked.
+    int blockingObstacle = -1;
+    bool pathBlocked = isPathBlocked(
+        p.position, p.destination, blockingObstacle
+    );
+
+    // Start avoiding an obstacle if necessary.
+    if (p.avoidanceObstacle == -1 && pathBlocked)
+    {
+        const Obstacle& obstacle = obstacles[blockingObstacle];
+
+        // Direction from the penguin towards its destination.
+        float dirX = goalDx / goalDistance;
+        float dirZ = goalDz / goalDistance;
+
+        // Perpendicular direction.
+        float sideX = -dirZ;
+        float sideZ = dirX;
+
+        // Place the waypoint outside the obstacle's collision radius.
+        float safeRadius = obstacle.radius + 0.4f + 0.3f;
+
+        vec3 leftWaypoint = obstacle.position;
+        leftWaypoint.x += sideX * safeRadius;
+        leftWaypoint.z += sideZ * safeRadius;
+
+        vec3 rightWaypoint = obstacle.position;
+        rightWaypoint.x -= sideX * safeRadius;
+        rightWaypoint.z -= sideZ * safeRadius;
+
+        // Keep waypoints inside the ice rink.
+        leftWaypoint = clampDestination(leftWaypoint);
+        rightWaypoint = clampDestination(rightWaypoint);
+
+        // Check whether the entire path to each waypoint is clear.
+        int leftBlocker = -1;
+        int rightBlocker = -1;
+
+        bool leftClear =
+            isPositionFree(leftWaypoint) &&
+            !isPathBlocked(p.position, leftWaypoint, leftBlocker);
+
+        bool rightClear =
+            isPositionFree(rightWaypoint) &&
+            !isPathBlocked(p.position, rightWaypoint, rightBlocker);
+
+        // Choose a waypoint with a collision-free path.
+        if (leftClear)
+        {
+            p.avoidanceSide = 1;
+            p.avoidanceWaypoint = leftWaypoint;
+            p.avoidanceObstacle = blockingObstacle;
+        }
+        else if (rightClear)
+        {
+            p.avoidanceSide = -1;
+            p.avoidanceWaypoint = rightWaypoint;
+            p.avoidanceObstacle = blockingObstacle;
+        }
+        else
+{
+    // Neither waypoint is reachable.
+    // Try to find a new destination with a clear path.
+    bool foundDestination = false;
+
+    for (int i = 0; i < 100; i++)
+    {
+        vec3 candidate = randomDestination();
+        int candidateBlocker = -1;
+
+        if (!isPathBlocked(p.position, candidate, candidateBlocker))
+        {
+            p.destination = candidate;
+            foundDestination = true;
+            break;
+        }
+    }
+
+    p.avoidanceObstacle = -1;
+    p.avoidanceSide = 0;
+
+    if (!foundDestination)
+    {
+        printf("NO REACHABLE DESTINATION FOUND\n");
+    }
+
+    return false;
+}
+    }
+
+    // Use the waypoint while avoiding an obstacle.
+    vec3 target = p.destination;
+
+    if (p.avoidanceObstacle != -1)
+    {
+        target = p.avoidanceWaypoint;
+
+        float waypointDx = target.x - p.position.x;
+        float waypointDz = target.z - p.position.z;
+
+        float waypointDistance = sqrtf(
+            waypointDx * waypointDx + waypointDz * waypointDz
+        );
+
+        // Once the waypoint is reached, resume normal Seek.
+        if (waypointDistance <= ARRIVAL_RADIUS)
+        {
+            p.avoidanceObstacle = -1;
+            p.avoidanceSide = 0;
+            target = p.destination;
+        }
+    }
+
+    // Calculate movement direction towards the current target.
+    float dx = target.x - p.position.x;
+    float dz = target.z - p.position.z;
     float distance = sqrtf(dx * dx + dz * dz);
 
-    // Stop when the penguin is close enough to its destination.
     if (distance <= ARRIVAL_RADIUS)
-        return true;
+        return false;
 
-    // Rotate towards the destination using the existing turning function.
+    // Rotate towards the current target.
     float targetYaw = atan2f(dx, dz);
     turnTowards(p, targetYaw, dt);
 
-    // Normalize the direction and move using delta time.
+    // Calculate the next position.
     float step = fminf(MOVE_SPEED * dt, distance);
 
-    p.position.x += (dx / distance) * step;
-    p.position.z += (dz / distance) * step;
+    vec3 nextPosition = p.position;
+    nextPosition.x += (dx / distance) * step;
+    nextPosition.z += (dz / distance) * step;
+    nextPosition.y = GROUND_Y;
 
-    // Keep the penguin on the ice surface.
-    p.position.y = GROUND_Y;
+    // Move only if the proposed position is collision-free.
+if (isPositionFree(nextPosition))
+{
+    p.position = nextPosition;
+}
+else
+{
+    // Debug: check why movement is blocked.
+    static int blockedCounter = 0;
 
-    return false;
+    if (++blockedCounter % 120 == 0)
+    {
+        printf(
+            "MOVE BLOCKED | obstacle: %d | "
+            "position: (%.2f, %.2f) | "
+            "target: (%.2f, %.2f)\n",
+            p.avoidanceObstacle,
+            p.position.x, p.position.z,
+            target.x, target.z
+        );
+    }
+}
+
+return false;
 }
 
 // ---------------------------------------------------------------------
@@ -886,8 +1175,9 @@ void enterState(Penguin& p, int index, State s)
     // Choose a random destination within the ice rink.
     p.destination = randomDestination();
 
-    // Use Idle temporarily until the Move animation is available.
-    playClip(p, "Idle", true);
+    // Start the movement animation sequence.
+    p.slidePhase = SLIDE_START;
+    playClip(p, "SlideStart", false);
     break;
     case AIM:
         playClip(p, "Aim", false);
@@ -916,11 +1206,34 @@ void updatePenguin(Penguin& p, int index, float dt)
         break;
 
     case MOVE:
-        // Move towards the selected destination.
-        // Once reached, continue to the aiming state.
+    // Handle the three movement animation phases.
+    switch (p.slidePhase)
+    {
+    case SLIDE_START:
+        // Wait until the penguin is lying on its belly.
+        if (clipFinished(p))
+        {
+            p.slidePhase = SLIDE_LOOP;
+            playClip(p, "SlideLoop", true);
+        }
+        break;
+
+    case SLIDE_LOOP:
+        // Move towards the destination using Seek Behaviour.
         if (updateSeek(p, dt))
+        {
+            p.slidePhase = SLIDE_END;
+            playClip(p, "SlideEnd", false);
+        }
+        break;
+
+    case SLIDE_END:
+        // Wait until the penguin has stood up.
+        if (clipFinished(p))
             enterState(p, index, AIM);
         break;
+    }
+    break;
 
     case AIM:
     {
