@@ -517,6 +517,24 @@ GLuint staticShader;
 mat4 projectionMatrix;
 std::vector<StaticPart> arena;
 
+
+ // ---------------------------------------------------------------------
+ // Orbit Camera
+ // ---------------------------------------------------------------------
+
+ // Camera angles in radians.
+ float cameraYaw = 0.0f;
+ float cameraPitch = atan2f(14.0f, 20.0f);
+
+ // Distance from the camera to the centre of the arena.
+ float cameraDistance = sqrtf(14.0f * 14.0f + 20.0f * 20.0f);
+
+ // Mouse interaction.
+ bool isDragging = false;
+ int lastMouseX = 0;
+ int lastMouseY = 0;
+
+
 // --- penguins ---
 const float PENGUIN_SCALE = 0.413f;   // from the arena file: ~1.5 m tall penguins
 const float GROUND_Y      = 0.05f;    // top of the ice
@@ -1367,8 +1385,17 @@ void display()
 {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    // The arena is about 26 x 20 m: look at it from above at an angle
-    mat4 viewMatrix = lookAtv(vec3(0, 14, 20), vec3(0, 0, 0), vec3(0, 1, 0));
+    // Calculate the camera position using spherical coordinates.
+    float cameraX = cameraDistance * cosf(cameraPitch) * sinf(cameraYaw);
+    float cameraY = cameraDistance * sinf(cameraPitch);
+    float cameraZ = cameraDistance * cosf(cameraPitch) * cosf(cameraYaw);
+
+    // The camera always looks towards the centre of the arena.
+    mat4 viewMatrix = lookAtv(
+        vec3(cameraX, cameraY, cameraZ),
+        vec3(0.0f, 0.0f, 0.0f),
+        vec3(0.0f, 1.0f, 0.0f)
+    );
 
     glUseProgram(staticShader);
     uploadMat4ToShader(staticShader, "projMatrix", projectionMatrix);
@@ -1447,6 +1474,87 @@ void reshape(int w, int h)
     projectionMatrix = perspective(M_PI / 3.0, (float)w / (float)h, 0.1, 200);
 }
 
+
+ // Called when a mouse button is pressed or released.
+ 
+ // Called when a mouse button is pressed or released.
+ void mouse(int button, int state, int x, int y)
+ {
+     // Rotate the camera with the left mouse button.
+     if (button == GLUT_LEFT_BUTTON)
+     {
+         if (state == GLUT_DOWN)
+         {
+             isDragging = true;
+             lastMouseX = x;
+             lastMouseY = y;
+         }
+         else if (state == GLUT_UP)
+         {
+             isDragging = false;
+         }
+     }
+
+     // Zoom using the mouse wheel.
+     // Button 3 = scroll up, button 4 = scroll down.
+     if (state == GLUT_DOWN)
+     {
+         if (button == 3)
+             cameraDistance -= 1.0f;
+         else if (button == 4)
+             cameraDistance += 1.0f;
+
+         // Keep the camera within a reasonable distance.
+         cameraDistance = std::clamp(cameraDistance, 8.0f, 45.0f);
+
+         glutPostRedisplay();
+     }
+ }
+
+
+ // Called when the mouse moves while a button is pressed.
+ void mouseMotion(int x, int y)
+ {
+     if (!isDragging)
+         return;
+
+     // Calculate how far the mouse has moved.
+     int dx = x - lastMouseX;
+     int dy = y - lastMouseY;
+
+     // Update the camera angles.
+     const float sensitivity = 0.005f;
+
+     cameraYaw -= dx * sensitivity;
+     cameraPitch += dy * sensitivity;
+
+     // Prevent the camera from flipping upside down.
+     cameraPitch = std::clamp(cameraPitch, -1.4f, 1.4f);
+
+     // Store the current mouse position.
+     lastMouseX = x;
+     lastMouseY = y;
+
+     glutPostRedisplay();
+ }
+
+
+ // Zoom the camera using the keyboard.
+ void keyboard(unsigned char key, int x, int y)
+ {
+     if (key == '+' || key == '=')
+         cameraDistance -= 1.0f;
+
+     else if (key == '-')
+         cameraDistance += 1.0f;
+
+     // Keep the camera within a reasonable distance.
+     cameraDistance = std::clamp(cameraDistance, 8.0f, 45.0f);
+
+     glutPostRedisplay();
+ }
+
+
 int main(int argc, char* argv[])
 {
     glutInit(&argc, argv);
@@ -1454,9 +1562,17 @@ int main(int argc, char* argv[])
     glutInitWindowSize(1000, 800);
     glutInitContextVersion(3, 2);
     glutCreateWindow("Penguin Snowdown");
+    
     glutDisplayFunc(display);
     glutReshapeFunc(reshape);
-    glutRepeatingTimer(20);   // redraw about 50 times per second
+
+    // Register mouse callbacks for orbit camera controls.
+    glutMouseFunc(mouse);
+    glutMotionFunc(mouseMotion);
+    glutKeyboardFunc(keyboard);
+
+    glutRepeatingTimer(20);
+
     init();
     glutMainLoop();
     return 0;
