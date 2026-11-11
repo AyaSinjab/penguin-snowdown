@@ -560,6 +560,27 @@ enum SlidePhase {
     SLIDE_END
 };
 
+
+ // ---------------------------------------------------------------------
+ // PART E: Snow Particle System
+ // ---------------------------------------------------------------------
+
+ // Represents one falling snow particle.
+ struct SnowParticle
+ {
+     vec3 position;  // Current position in world coordinates
+     vec3 velocity;  // Movement direction and speed
+     float size;     // Visual size of the snowflake
+ };
+
+ // All active snow particles.
+ std::vector<SnowParticle> snowParticles;
+
+ // Snowfall settings.
+ const int NUM_SNOW_PARTICLES = 500;
+ const float SNOW_HEIGHT = 15.0f;
+
+
 struct Penguin {
     vec3  position;   // where on the ice (y = GROUND_Y)
     float yaw;        // rotation around the vertical axis, radians
@@ -670,6 +691,63 @@ float randomRange(float a, float b)
 {
     return a + (b - a) * (rand() / (float)RAND_MAX);
 }
+
+
+ // ---------------------------------------------------------------------
+ // PART E2: Snow Particle Simulation
+ // ---------------------------------------------------------------------
+
+ // Create snow particles with random positions and velocities.
+ void initSnowParticles()
+ {
+     snowParticles.clear();
+
+     for (int i = 0; i < NUM_SNOW_PARTICLES; i++)
+     {
+         SnowParticle particle;
+
+         // Random starting position above the arena.
+         particle.position = vec3(
+             randomRange(-13.0f, 13.0f),
+             randomRange(GROUND_Y, SNOW_HEIGHT),
+             randomRange(-10.0f, 10.0f)
+         );
+
+         // Falling speed and slight horizontal wind.
+         particle.velocity = vec3(
+             randomRange(-0.3f, 0.3f),
+             randomRange(-2.0f, -0.8f),
+             randomRange(-0.3f, 0.3f)
+         );
+
+         // Random size for visual variation.
+         particle.size = randomRange(0.25f, 0.6f);
+
+         snowParticles.push_back(particle);
+     }
+ }
+
+ // Update all snow particles every frame.
+ void updateSnowParticles(float dt)
+ {
+     for (SnowParticle& particle : snowParticles)
+     {
+         // Update position using velocity and delta time.
+         particle.position.x += particle.velocity.x * dt;
+         particle.position.y += particle.velocity.y * dt;
+         particle.position.z += particle.velocity.z * dt;
+
+         // Respawn the particle when it reaches the ground.
+         if (particle.position.y <= GROUND_Y)
+         {
+             particle.position = vec3(
+                 randomRange(-13.0f, 13.0f),
+                 SNOW_HEIGHT,
+                 randomRange(-10.0f, 10.0f)
+             );
+         }
+     }
+ }
 
 // ---------------------------------------------------------------------
 // PART D: Penguin movement and seek behaviour
@@ -1374,6 +1452,10 @@ void init()
     snowballModel = LoadModel("assets/sphere.obj");   // radius 0.1 m, from lab 3
     // Step 5: the FSM takes over. Every penguin starts in IDLE.
     srand((unsigned)time(NULL));
+
+    // Initialize the snowfall particle system.
+    initSnowParticles();
+
     for (int i = 0; i < (int)penguins.size(); i++)
         enterState(penguins[i], i, IDLE);
 
@@ -1425,6 +1507,8 @@ void display()
         // Step 6: physics for all snowballs in the air
         updateSnowballs(dt);
         updateSplats(dt);
+        // Update falling snow particles.
+        updateSnowParticles(dt);
 
     for (Penguin& p : penguins)
     {
@@ -1463,6 +1547,40 @@ void display()
         uploadMat4ToShader(staticShader, "modelMatrix", m);
         DrawModel(snowballModel, staticShader, "in_Position", "in_Normal", NULL);
     }
+
+
+ // ---------------------------------------------------------------------
+ // PART E3: Snow Particle Rendering
+ // ---------------------------------------------------------------------
+
+ // Render snow particles using the existing static shader.
+ glUseProgram(staticShader);
+
+ glUniform3f(
+     glGetUniformLocation(staticShader, "baseColor"),
+     1.0f, 1.0f, 1.0f
+ );
+
+ for (const SnowParticle& particle : snowParticles)
+ {
+     // Position and scale each snowflake.
+     mat4 modelMatrix =
+         T(particle.position.x,
+           particle.position.y,
+           particle.position.z) *
+         S(particle.size, particle.size, particle.size);
+
+     uploadMat4ToShader(staticShader, "modelMatrix", modelMatrix);
+
+     DrawModel(
+         snowballModel,
+         staticShader,
+         "in_Position",
+         "in_Normal",
+         NULL
+     );
+ }
+
 
     printError("display");
     glutSwapBuffers();
