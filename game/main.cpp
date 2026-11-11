@@ -10,6 +10,7 @@
 #include <math.h>
 #include <time.h>
 #include <algorithm>
+#include <cstring>
 
 #define MAIN
 #include "MicroGlut.h"
@@ -566,6 +567,7 @@ struct Penguin {
     int avoidanceSide = 0; // 0 = no avoidance, 1 = left, -1 = right
     int avoidanceObstacle = -1; // Index of obstacle being avoided
     vec3 avoidanceWaypoint;       // Temporary target for obstacle avoidance
+    float penguinAvoidanceCooldown = 0.0f;
 };
 float lastTime = 0;   // for dt (seconds)
 
@@ -585,19 +587,58 @@ void playClip(Penguin& p, const char* name, bool loop)
     p.loop = loop;
 }
 
+
 // Moves the penguin's animation clock forward by dt seconds
+
 void advanceClip(Penguin& p, float dt)
 {
     const AnimClip& c = penguinMesh.clips[p.clip];
     float duration = c.end - c.start;
-    p.clipTime += dt;
+
+    // Speed up the start and end of the sliding animation.
+    float speed = 1.0f;
+
+    if (strcmp(c.name, "SlideStart") == 0 ||
+        strcmp(c.name, "SlideEnd") == 0)
+        speed = 2.0f;
+
+    p.clipTime += dt * speed;
+
     if (p.loop)
-        p.clipTime = fmodf(p.clipTime, duration);   // wrap around
+        p.clipTime = fmodf(p.clipTime, duration);
     else if (p.clipTime > duration)
-        p.clipTime = duration;                      // hold the last frame
+        p.clipTime = duration;
 }
 
+
+
 std::vector<Penguin> penguins;
+
+
+ // Checks whether a position is too close to another penguin.
+bool collidesWithPenguin(const vec3& position, const Penguin& current)
+{
+    const float penguinRadius = 0.4f;
+    const float safeDistance = 2.0f * penguinRadius;
+
+    for (const Penguin& other : penguins)
+    {
+        // Ignore the penguin checking its own position.
+        if (&other == &current)
+            continue;
+
+        float dx = position.x - other.position.x;
+        float dz = position.z - other.position.z;
+
+        float distanceSquared = dx * dx + dz * dz;
+
+        if (distanceSquared < safeDistance * safeDistance)
+            return true;
+    }
+
+    return false;
+}
+
 
 // ---------------------------------------------------------------------
 // PART B2: the AI - a finite state machine per penguin (step 5)
@@ -930,29 +971,54 @@ bool updateSeek(Penguin& p, float dt)
     nextPosition.y = GROUND_Y;
 
     // Move only if the proposed position is collision-free.
-if (isPositionFree(nextPosition))
+if (isPositionFree(nextPosition) &&
+    !collidesWithPenguin(nextPosition, p))
 {
     p.position = nextPosition;
 }
+
 else
-{
-    // Debug: check why movement is blocked.
-    static int blockedCounter = 0;
 
-    if (++blockedCounter % 120 == 0)
+    // Move only if the proposed position is collision-free.
+    if (isPositionFree(nextPosition) &&
+        !collidesWithPenguin(nextPosition, p))
     {
-        printf(
-            "MOVE BLOCKED | obstacle: %d | "
-            "position: (%.2f, %.2f) | "
-            "target: (%.2f, %.2f)\n",
-            p.avoidanceObstacle,
-            p.position.x, p.position.z,
-            target.x, target.z
-        );
+        p.position = nextPosition;
     }
-}
+    else
+    {
+        // Choose a new destination if another penguin blocks the path.
+        if (isPositionFree(nextPosition) &&
+            collidesWithPenguin(nextPosition, p) &&
+            p.penguinAvoidanceCooldown <= 0.0f)
+        {
+            p.destination = randomDestination();
 
-return false;
+            // Reset obstacle avoidance for the new destination.
+            p.avoidanceObstacle = -1;
+            p.avoidanceSide = 0;
+
+            // Wait before allowing another direction change.
+            p.penguinAvoidanceCooldown = 1.0f;
+        }
+
+        // Debug: check why movement is blocked.
+        static int blockedCounter = 0;
+
+        if (++blockedCounter % 120 == 0)
+        {
+            printf(
+                "MOVE BLOCKED | obstacle: %d | "
+                "position: (%.2f, %.2f) | "
+                "target: (%.2f, %.2f)\n",
+                p.avoidanceObstacle,
+                p.position.x, p.position.z,
+                target.x, target.z
+            );
+        }
+    }
+
+    return false;
 }
 
 // ---------------------------------------------------------------------
@@ -1191,6 +1257,12 @@ void enterState(Penguin& p, int index, State s)
 // Runs every frame: advances the animation, then checks the transitions
 void updatePenguin(Penguin& p, int index, float dt)
 {
+    // Count down the time until another direction change is allowed.
+    if (p.penguinAvoidanceCooldown > 0.0f)
+    {
+        p.penguinAvoidanceCooldown -= dt;
+    }
+
     float prevClipTime = p.clipTime;   // remembered to detect the release moment
     advanceClip(p, dt);
     p.stateTimer += dt;

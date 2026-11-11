@@ -409,24 +409,43 @@ based on the current tests.
 
 #### **Step 7.13 – MOVE Animation Integration**
 
-Created three separate animations in Blender for the penguins'
-movement behaviour: SlideStart, SlideLoop and SlideEnd.
+Created three separate animations in Blender for the penguins' movement behaviour: `SlideStart`, `SlideLoop` and `SlideEnd`.
 
-Implemented three internal animation phases within the existing
-MOVE state: SLIDE_START, SLIDE_LOOP and SLIDE_END.
+Implemented three internal animation phases within the existing MOVE state: `SLIDE_START`, `SLIDE_LOOP` and `SLIDE_END`.
 
-SlideStart plays once when entering MOVE. Once completed,
-SlideLoop starts and repeats while the penguin moves towards
-its destination using Seek Behaviour and obstacle avoidance.
+`SlideStart` plays once when entering MOVE. Once completed, `SlideLoop` starts and repeats while the penguin moves towards its destination using Seek Behaviour and obstacle avoidance. When the destination is reached, `SlideEnd` plays once before the penguin transitions to the AIM state.
 
-When the destination is reached, SlideEnd plays once before
-the penguin transitions to the AIM state.
+Exported the updated penguin model as a GLB file containing all six animation clips: `Idle`, `Aim`, `Throw`, `SlideStart`, `SlideLoop` and `SlideEnd`.
 
-The existing movement and obstacle avoidance algorithms remain
-unchanged. Animation playback and movement are handled separately.
+The existing movement and obstacle avoidance algorithms remain unchanged. Animation playback and movement are handled separately.
 
-**Status:** Animation sequence implemented in C++ but not yet
-compiled or tested. GLB export and runtime verification remain.
+**Status:** Implemented, compiled and successfully tested at runtime. All three slide animations play in the intended sequence. Minor adjustments to animation playback speed may be made later.
+
+#### **Step 7.14 – Slide Animation Speed Adjustment**
+
+Adjusted the animation playback speed for `SlideStart` and `SlideEnd` to improve the transitions between standing and sliding.
+
+Modified the `advanceClip()` function to apply a speed multiplier of `2.0f` to these two animation clips. The animation speed is controlled by multiplying `dt` with the corresponding speed factor.
+
+`SlideLoop` and the remaining animations (`Idle`, `Aim` and `Throw`) retain their original playback speed.
+
+The penguins' movement speed and Seek Behaviour remain unchanged.
+
+**Status:** Implemented, compiled and successfully tested at runtime. The faster transitions provide a smoother movement sequence.
+
+#### **Step 7.15 – Penguin-to-Penguin Avoidance**
+
+Implemented penguin-to-penguin collision avoidance to prevent AI-controlled penguins from moving through each other.
+
+Added a `collidesWithPenguin()` function that checks the distance between penguins in the XZ-plane using their collision radii.
+
+Updated `updateSeek()` to check both static obstacles and other penguins before applying movement. If another penguin blocks the next position, the moving penguin selects a new random destination and resets its current obstacle avoidance state.
+
+Introduced a one-second cooldown to prevent repeated destination changes every frame, reducing jitter during encounters.
+
+The existing Seek Behaviour, static obstacle avoidance and slide animations remain integrated with the movement system.
+
+**Status:** Implemented and tested at runtime. Penguins attempt to change direction when encountering another penguin.
 
 ## 5. Testing and results
 
